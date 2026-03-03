@@ -40,7 +40,7 @@ DST_FOLDER = "metadata_model/db_bq"
 
 # Log folder — each run writes a timestamped log file here.
 # Set to "" or None to disable file logging.
-LOG_FOLDER = "logs"
+LOG_FOLDER = "Migration_logs"
 
 # Snowflake schemas → BigQuery table prefix mapping
 # Pattern: SF_DATABASE.SCHEMA.TABLE → BQ_PROJECT.BQ_DATASET.SCHEMA_TABLE
