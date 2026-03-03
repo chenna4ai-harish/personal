@@ -40,7 +40,7 @@ DST_FOLDER = "metadata_model/db_bq"
 
 # Log folder — each run writes a timestamped log file here.
 # Set to "" or None to disable file logging.
-LOG_FOLDER = "Migration_logs"
+LOG_FOLDER = "logs"
 
 # Snowflake schemas → BigQuery table prefix mapping
 # Pattern: SF_DATABASE.SCHEMA.TABLE → BQ_PROJECT.BQ_DATASET.SCHEMA_TABLE
@@ -53,10 +53,20 @@ SCHEMA_MAPPINGS = [
     "BR_TODAY",
     "RF_TODAY",
     "BR_REFERENCE_DATA",
-    "RF_REFERENCE_DATA",
-    "BR_INACT",
-    "RF_INACT",
 ]
+
+# Schema-level dataset overrides.
+# Schemas listed here map to their OWN BigQuery dataset (not BQ_DATASET),
+# and the table name is kept as-is — no SCHEMA_ prefix is added.
+#
+# Example:
+#   EVEREST_ANALYSIS_ASCENT_PR.BR_REFERENCE_DATA.DUNS_SEGMENT
+#   → `prj-s-3384-datachef-qa.br_reference_data.DUNS_SEGMENT`
+#
+# Schemas NOT listed here use the default BQ_DATASET with SCHEMA_TABLE naming.
+SCHEMA_OVERRIDES = {
+    "BR_REFERENCE_DATA": "br_reference_data",
+}
 
 
 def _schemas_re() -> str:
@@ -86,6 +96,9 @@ def convert_object_references(sql: str) -> str:
     def replace_ref(match):
         schema = match.group(1).strip('"').upper()
         table  = match.group(2).strip('"').upper()
+        if schema in SCHEMA_OVERRIDES:
+            # Use the schema's own BQ dataset; keep table name unchanged
+            return f"`{BQ_PROJECT}.{SCHEMA_OVERRIDES[schema]}.{table}`"
         return f"`{BQ_PROJECT}.{BQ_DATASET}.{schema}_{table}`"
 
     schemas_pattern = _schemas_re()
@@ -130,6 +143,9 @@ def convert_create_view(sql: str) -> str:
         prefix = re.sub(r'\bSECURE\s+', '', match.group(1), flags=re.IGNORECASE)
         schema = match.group(2).strip('"').upper()
         view   = match.group(3).strip('"').upper()
+        if schema in SCHEMA_OVERRIDES:
+            # Use the schema's own BQ dataset; keep view name unchanged
+            return f"{prefix}`{BQ_PROJECT}.{SCHEMA_OVERRIDES[schema]}.{view}`"
         return f"{prefix}`{BQ_PROJECT}.{BQ_DATASET}.{schema}_{view}`"
 
     pattern = (
