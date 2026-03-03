@@ -17,6 +17,7 @@ import re
 import sys
 import shutil
 import argparse
+import datetime
 from pathlib import Path
 
 # Force UTF-8 output on Windows consoles
@@ -36,6 +37,10 @@ SF_DATABASE = "EVEREST_ANALYSIS_ASCENT_PR"
 # Can also be overridden at runtime: --src /path/to/db --dst /path/to/db_bq
 SRC_FOLDER = "metadata_model/db"
 DST_FOLDER = "metadata_model/db_bq"
+
+# Log folder — each run writes a timestamped log file here.
+# Set to "" or None to disable file logging.
+LOG_FOLDER = "logs"
 
 # Snowflake schemas → BigQuery table prefix mapping
 # Pattern: SF_DATABASE.SCHEMA.TABLE → BQ_PROJECT.BQ_DATASET.SCHEMA_TABLE
@@ -356,6 +361,36 @@ def convert_sql(sql: str, source_file: str) -> tuple:
 
 
 # ─────────────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────────────
+
+class _DualWriter:
+    """
+    Mirrors every write() to both the real stdout and a log file.
+    Assign to sys.stdout so all print() calls are captured automatically.
+    """
+    def __init__(self, log_path: Path, original_stdout):
+        self._stdout   = original_stdout
+        self._log_path = log_path
+        self._log      = open(log_path, 'w', encoding='utf-8')
+
+    def write(self, text: str):
+        self._stdout.write(text)
+        self._log.write(text)
+
+    def flush(self):
+        self._stdout.flush()
+        self._log.flush()
+
+    def isatty(self):
+        return False
+
+    def close(self):
+        self._log.flush()
+        self._log.close()
+
+
+# ─────────────────────────────────────────────────────────────
 # FILE PROCESSING
 # ─────────────────────────────────────────────────────────────
 
@@ -497,7 +532,24 @@ def main():
         shutil.rmtree(dst_dir)
 
     dst_dir.mkdir(parents=True, exist_ok=True)
-    process_directory(src_dir, dst_dir)
+
+    # ── Set up log file ───────────────────────────────────────
+    writer = None
+    if LOG_FOLDER:
+        log_dir = Path(LOG_FOLDER)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_path  = log_dir / f"migration_{timestamp}.log"
+        writer    = _DualWriter(log_path, sys.stdout)
+        sys.stdout = writer
+
+    try:
+        process_directory(src_dir, dst_dir)
+    finally:
+        if writer:
+            sys.stdout = writer._stdout
+            writer.close()
+            print(f"📝 Log saved to: {log_path.resolve()}")
 
 
 if __name__ == '__main__':
